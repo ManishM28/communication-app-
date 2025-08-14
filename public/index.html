@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Room Chat</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #e0e7ff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+  }
+  #container {
+    background: white;
+    max-width: 480px;
+    width: 90%;
+    height: 80vh;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+  }
+  h1 {
+    background: #4f46e5;
+    color: white;
+    padding: 15px;
+    margin: 0;
+    text-align: center;
+    border-radius: 10px 10px 0 0;
+  }
+  #setup {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  input, button {
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #c7d2fe;
+    font-size: 1rem;
+  }
+  button {
+    background: #4f46e5;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    border: none;
+  }
+  button:hover { background: #4338ca; }
+  #setup-buttons { display: flex; gap: 10px; }
+  #chat { flex: 1; display: flex; flex-direction: column; }
+  #room-header {
+    background: #eef2ff;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid #ddd;
+  }
+  #backBtn {
+    background: #ef4444;
+    padding: 6px 10px;
+    border-radius: 5px;
+    border: none;
+    color: white;
+  }
+  #backBtn:hover { background: #dc2626; }
+  #chat-box {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+    background: #f9fafb;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .message {
+    max-width: 75%;
+    padding: 10px 15px;
+    border-radius: 20px;
+    background-color: #e0e7ff;
+    position: relative;
+    font-size: 0.95rem;
+  }
+  .message.self {
+    background-color: #4f46e5;
+    color: white;
+    align-self: flex-end;
+  }
+  .message time {
+    font-size: 0.7rem;
+    position: absolute;
+    bottom: -16px;
+    right: 15px;
+    color: #555;
+  }
+  #input-area {
+    display: flex;
+    gap: 10px;
+    border-top: 1px solid #ddd;
+    padding: 10px;
+  }
+  #msg { flex: 1; border-radius: 25px; border: 1px solid #c7d2fe; padding: 10px; }
+  #sendBtn {
+    border-radius: 25px;
+    background: #4f46e5;
+    color: white;
+    padding: 0 20px;
+    cursor: pointer;
+  }
+  #sendBtn:hover { background: #4338ca; }
+</style>
+</head>
+<body>
+
+<div id="container">
+  <h1>💬 Room Chat</h1>
+  <div id="setup">
+    <input type="text" id="roomId" placeholder="Enter Room ID" />
+    <div id="setup-buttons">
+      <button id="joinBtn">Join</button>
+      <button id="createBtn">Create</button>
+    </div>
+  </div>
+  <div id="chat" style="display:none;">
+    <div id="room-header">
+      <button id="backBtn">⬅ Back</button> Room: <span id="roomName"></span>
+    </div>
+    <div id="chat-box"></div>
+    <div id="input-area">
+      <input id="msg" type="text" placeholder="Type a message..." />
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+  const setupDiv = document.getElementById('setup');
+  const chatDiv = document.getElementById('chat');
+  const roomNameSpan = document.getElementById('roomName');
+  const chatBox = document.getElementById('chat-box');
+  const msgInput = document.getElementById('msg');
+  const joinBtn = document.getElementById('joinBtn');
+  const createBtn = document.getElementById('createBtn');
+  const sendBtn = document.getElementById('sendBtn');
+  const roomIdInput = document.getElementById('roomId');
+  const backBtn = document.getElementById('backBtn');
+
+  let currentRoom = "";
+
+  function createRoom() {
+    currentRoom = Math.random().toString(36).substring(2, 8).toUpperCase();
+    startChat(currentRoom);
+  }
+
+  function joinRoom() {
+    const room = roomIdInput.value.trim().toUpperCase();
+    if (room) startChat(room);
+  }
+
+  function startChat(roomId) {
+    currentRoom = roomId;
+    roomNameSpan.textContent = roomId;
+    setupDiv.style.display = 'none';
+    chatDiv.style.display = 'flex';
+    chatBox.innerHTML = '';
+    msgInput.value = '';
+    msgInput.focus();
+    socket.emit('joinRoom', roomId);
+
+    socket.off('previousMessages');
+    socket.off('message');
+
+    socket.on('previousMessages', (msgs) => {
+      chatBox.innerHTML = '';
+      msgs.forEach(m => appendMessage(m.text, m.created_at, false));
+      scrollToBottom();
+    });
+
+    socket.on('message', (msg) => {
+      appendMessage(msg.text, msg.created_at, false);
+      scrollToBottom();
+    });
+  }
+
+  function appendMessage(text, time, self) {
+    const el = document.createElement('div');
+    el.classList.add('message');
+    if (self) el.classList.add('self');
+    el.textContent = text;
+    const timeEl = document.createElement('time');
+    timeEl.textContent = new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    el.appendChild(timeEl);
+    chatBox.appendChild(el);
+  }
+
+  function scrollToBottom() {
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  function sendMessage() {
+    const msg = msgInput.value.trim();
+    if (!msg) return;
+    socket.emit('message', { roomId: currentRoom, message: msg });
+    appendMessage(msg, new Date().toISOString(), true);
+    msgInput.value = '';
+    scrollToBottom();
+  }
+
+  function leaveRoom() {
+    socket.emit('leaveRoom', currentRoom);
+    currentRoom = "";
+    chatDiv.style.display = 'none';
+    setupDiv.style.display = 'flex';
+    chatBox.innerHTML = '';
+    roomIdInput.value = '';
+  }
+
+  createBtn.addEventListener('click', createRoom);
+  joinBtn.addEventListener('click', joinRoom);
+  sendBtn.addEventListener('click', sendMessage);
+  backBtn.addEventListener('click', leaveRoom);
+  msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+</script>
+</body>
+</html>
